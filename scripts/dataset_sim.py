@@ -1,0 +1,63 @@
+"""
+Dataset management tool for operations requiring Isaac Sim (SimulationApp).
+
+This script handles dataset operations that require the Isaac Sim application to be running:
+- record: Record teleoperation data
+- replay: Replay dataset in simulation
+"""
+
+import multiprocessing
+
+if multiprocessing.get_start_method() != "spawn":
+    multiprocessing.set_start_method("spawn", force=True)
+
+import argparse
+from lehome.utils.logger import get_logger
+
+
+def main():
+    """Main entry point for dataset operations requiring Isaac Sim."""
+    logger = get_logger(__name__)
+    from isaaclab.app import AppLauncher
+    from scripts.utils.common import close_app, launch_app_from_args
+    from scripts.utils.parser import setup_record_parser, setup_replay_parser
+
+    isaac_args_parser = argparse.ArgumentParser(add_help=False)
+    AppLauncher.add_app_launcher_args(isaac_args_parser)
+
+    parser = argparse.ArgumentParser(
+        description="LeHome dataset management tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", help="Available commands", required=True
+    )
+
+    # Setup all subcommand parsers first
+    setup_record_parser(subparsers, [isaac_args_parser])
+    setup_replay_parser(subparsers, [isaac_args_parser])
+
+    args = parser.parse_args()
+    logger.info(f"Starting dataset command: {args.command}")
+    simulation_app = launch_app_from_args(args)
+
+    # 2. Now it's safe to import lehome tasks and recording/replay logic
+    try:
+        import lehome.tasks
+        from scripts.utils import dataset_record, dataset_replay
+
+        if args.command == "record":
+            dataset_record.record_dataset(args, simulation_app)
+            logger.info("Dataset recording finished successfully.")
+        elif args.command == "replay":
+            dataset_replay.replay(args)
+            logger.info("Dataset replay finished successfully.")
+    except Exception as e:
+        logger.error(f"Error during dataset {args.command}: {e}", exc_info=True)
+        raise
+    finally:
+        close_app(simulation_app)
+
+
+if __name__ == "__main__":
+    main()
