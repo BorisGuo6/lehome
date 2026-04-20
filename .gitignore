@@ -83,3 +83,4 @@ tests/
 .isaac-lab-docker-history
 
 
+.claude/settings.local.json
