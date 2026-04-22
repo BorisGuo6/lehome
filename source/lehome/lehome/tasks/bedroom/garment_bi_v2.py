@@ -77,6 +77,8 @@ class GarmentEnv(DirectRLEnv):
             orientation=(0.0, 0.0, 0.0, 0.0),
         )
 
+        self._fix_scene_rigid_bodies()
+
         # Create garment object with selected asset
         self._create_garment_object()
 
@@ -89,6 +91,42 @@ class GarmentEnv(DirectRLEnv):
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=1200, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
+
+    def _fix_scene_rigid_bodies(self):
+        """Set non-kinematic RigidDynamic mesh prims to kinematic.
+
+        PhysX rejects eSIMULATION_SHAPE triangle mesh collision on
+        non-kinematic rigid bodies. Runs right after scene USD load,
+        before physics is stepped.
+        """
+        from pxr import UsdPhysics, UsdGeom
+
+        stage = self.scene.stage
+        visited = set()
+        for prim in stage.Traverse():
+            if not prim.IsA(UsdGeom.Mesh):
+                continue
+            if not prim.HasAPI(UsdPhysics.CollisionAPI):
+                continue
+            candidate = prim
+            rigid_prim = None
+            while candidate and str(candidate.GetPath()) != "/":
+                if candidate.HasAPI(UsdPhysics.RigidBodyAPI):
+                    rigid_prim = candidate
+                    break
+                candidate = candidate.GetParent()
+            if rigid_prim is None:
+                continue
+            rpath = str(rigid_prim.GetPath())
+            if rpath in visited:
+                continue
+            visited.add(rpath)
+            rigid_api = UsdPhysics.RigidBodyAPI(rigid_prim)
+            k = rigid_api.GetKinematicEnabledAttr()
+            if k and k.Get():
+                continue
+            rigid_api.CreateKinematicEnabledAttr(True)
+            logger.info(f"[PhysX Fix] Set kinematic on: {rpath}")
 
     def _create_garment_object(self):
         """

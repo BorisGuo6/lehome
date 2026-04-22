@@ -22,6 +22,50 @@ from .common import stabilize_robot
 logger = get_logger(__name__)
 
 
+def fix_physx_triangle_mesh_errors(stage) -> int:
+    """Fix non-SDF triangle mesh on non-kinematic RigidDynamic prims.
+
+    PhysX does not support eSIMULATION_SHAPE triangle mesh collision on
+    non-kinematic rigid bodies. For each Mesh prim that has both
+    RigidBodyAPI (non-kinematic) and CollisionAPI but no SDF collision,
+    set it to kinematic.
+    """
+    from pxr import UsdPhysics, UsdGeom
+
+    fixed = 0
+    visited = set()
+    for prim in stage.Traverse():
+        if not prim.IsA(UsdGeom.Mesh):
+            continue
+        if not prim.HasAPI(UsdPhysics.CollisionAPI):
+            continue
+
+        rigid_prim = None
+        candidate = prim
+        while candidate and str(candidate.GetPath()) != "/":
+            if candidate.HasAPI(UsdPhysics.RigidBodyAPI):
+                rigid_prim = candidate
+                break
+            candidate = candidate.GetParent()
+
+        if rigid_prim is None:
+            continue
+        rigid_path = str(rigid_prim.GetPath())
+        if rigid_path in visited:
+            continue
+        visited.add(rigid_path)
+
+        rigid_api = UsdPhysics.RigidBodyAPI(rigid_prim)
+        kinematic_attr = rigid_api.GetKinematicEnabledAttr()
+        if kinematic_attr and kinematic_attr.Get():
+            continue
+
+        rigid_api.CreateKinematicEnabledAttr(True)
+        fixed += 1
+        logger.info(f"[PhysX Fix] Set kinematic on: {rigid_path}")
+    return fixed
+
+
 def build_episode_row_index_map(
     hf_dataset: Any,
     start_episode: int,
@@ -153,7 +197,9 @@ def load_initial_pose(
         Returns (None, None) if no metadata is found.
     """
     metadata_file = Path(dataset_root) / "meta" / "episode_metadata.json"
-        
+    if not metadata_file.exists():
+        metadata_file = Path(dataset_root) / "meta" / "garment_info.json"
+
     if not metadata_file.exists():
         return None, None
 
@@ -167,8 +213,7 @@ def load_initial_pose(
             if episode_key in episodes:
                 pose_data = episodes[episode_key].get("object_initial_pose")
                 if pose_data is not None:
-                    # Return the unified nested dict directly, no wrappers
-                    return pose_data, variant_name
+                    return {"Garment": pose_data}, variant_name
 
         return None, None
     except Exception as e:
@@ -434,6 +479,15 @@ def replay(args: argparse.Namespace) -> None:
     logger.info(f"Creating environment: {args.task}")
     env_cfg = parse_env_cfg(args.task, device=device)
 
+    if hasattr(env_cfg, "garment_name") and env_cfg.garment_name is None:
+        garment_info_file = Path(args.dataset_root) / "meta" / "garment_info.json"
+        if garment_info_file.exists():
+            with open(garment_info_file, "r", encoding="utf-8") as f:
+                garment_info = json.load(f)
+            garment_name = next(iter(garment_info))
+            env_cfg.garment_name = garment_name
+            logger.info(f"Loaded garment name from dataset metadata: {garment_name}")
+
     if hasattr(env_cfg, "use_random_seed"):
         env_cfg.use_random_seed = args.use_random_seed
 
@@ -454,8 +508,24 @@ def replay(args: argparse.Namespace) -> None:
 
     # 2. Environment Creation
     env: DirectRLEnv = gym.make(args.task, cfg=env_cfg).unwrapped
+
+    # Fix PhysX triangle mesh errors on non-kinematic rigid bodies
+    try:
+        stage = env.scene.stage
+        num_fixed = fix_physx_triangle_mesh_errors(stage)
+        if num_fixed:
+            logger.info(f"[PhysX Fix] Fixed {num_fixed} non-kinematic triangle mesh prim(s)")
+    except Exception as e:
+        logger.warning(f"[PhysX Fix] Could not apply fix: {e}")
+
     if hasattr(env, "initialize_obs"):
         env.initialize_obs()
+
+    logger.info(
+        f"[Render Debug] has_gui={env.sim.has_gui()}, "
+        f"has_rtx_sensors={env.sim.has_rtx_sensors()}, "
+        f"render_mode={env.sim.render_mode}"
+    )
 
     # 3. Setup Replay Infrastructure
     rate_limiter = RateLimiter(args.step_hz) if args.step_hz > 0 else None
