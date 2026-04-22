@@ -13,8 +13,8 @@ This guide provides step-by-step instructions for installing the LeHome environm
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/lehome-official/lehome_release.git
-cd lehome_release
+git clone https://github.com/lehome-official/lehome.git
+cd lehome
 ```
 
 ### 2. Install Dependencies with uv
