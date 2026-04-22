@@ -305,6 +305,16 @@ def eval(args: argparse.Namespace, simulation_app: Any) -> None:
             env_cfg.sim.seed = args.seed
         logger.info(f"Using fixed random seed: {args.seed}")
 
+    # Apply challenge v2 garment settings if provided
+    if getattr(args, "garment_name", None) and hasattr(env_cfg, "garment_name"):
+        env_cfg.garment_name = args.garment_name
+    if getattr(args, "garment_version", None) and hasattr(env_cfg, "garment_version"):
+        env_cfg.garment_version = args.garment_version
+    if getattr(args, "garment_cfg_base_path", None) and hasattr(env_cfg, "garment_cfg_base_path"):
+        env_cfg.garment_cfg_base_path = args.garment_cfg_base_path
+    if getattr(args, "particle_cfg_path", None) and hasattr(env_cfg, "particle_cfg_path"):
+        env_cfg.particle_cfg_path = args.particle_cfg_path
+
     # 2. Initialize Policy
     logger.info(f"Initializing Policy Type: {args.policy_type}")
     if not PolicyRegistry.is_registered(args.policy_type):

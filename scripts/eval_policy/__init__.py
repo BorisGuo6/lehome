@@ -10,6 +10,8 @@ from .registry import PolicyRegistry
 # Import policy implementations to trigger registration.
 # These are imported after registry to ensure @PolicyRegistry.register() decorators run.
 from . import lerobot_policy  # noqa: F401
+from . import example_participant_policy  # noqa: F401
+from . import docker_policy  # noqa: F401
 
 __all__ = [
     "BasePolicy",

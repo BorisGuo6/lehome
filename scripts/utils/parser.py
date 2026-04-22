@@ -184,4 +184,10 @@ def setup_eval_parser() -> argparse.ArgumentParser:
     parser.add_argument("--use_ee_pose", action="store_true", help="Policy outputs EE poses; IK will be used.")
     parser.add_argument("--ee_urdf_path", type=str, default="Assets/robots/so101_new_calib.urdf", help="URDF path for IK solver (single SO-101 arm).")
 
+    # Challenge v2 garment arguments
+    parser.add_argument("--garment_name", type=str, default=None, help="Garment name (e.g., 'Top_Long_Unseen_0') for v2 tasks.")
+    parser.add_argument("--garment_version", type=str, default="Release", help="Garment version ('Release' or 'Holdout') for v2 tasks.")
+    parser.add_argument("--garment_cfg_base_path", type=str, default="Assets/objects/Challenge_Garment", help="Base path for challenge garment configs.")
+    parser.add_argument("--particle_cfg_path", type=str, default="source/lehome/lehome/tasks/bedroom/config_file/particle_garment_cfg.yaml", help="Particle config YAML path for v2 tasks.")
+
     return parser
