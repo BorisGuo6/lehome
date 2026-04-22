@@ -22,50 +22,6 @@ from .common import stabilize_robot
 logger = get_logger(__name__)
 
 
-def fix_physx_triangle_mesh_errors(stage) -> int:
-    """Fix non-SDF triangle mesh on non-kinematic RigidDynamic prims.
-
-    PhysX does not support eSIMULATION_SHAPE triangle mesh collision on
-    non-kinematic rigid bodies. For each Mesh prim that has both
-    RigidBodyAPI (non-kinematic) and CollisionAPI but no SDF collision,
-    set it to kinematic.
-    """
-    from pxr import UsdPhysics, UsdGeom
-
-    fixed = 0
-    visited = set()
-    for prim in stage.Traverse():
-        if not prim.IsA(UsdGeom.Mesh):
-            continue
-        if not prim.HasAPI(UsdPhysics.CollisionAPI):
-            continue
-
-        rigid_prim = None
-        candidate = prim
-        while candidate and str(candidate.GetPath()) != "/":
-            if candidate.HasAPI(UsdPhysics.RigidBodyAPI):
-                rigid_prim = candidate
-                break
-            candidate = candidate.GetParent()
-
-        if rigid_prim is None:
-            continue
-        rigid_path = str(rigid_prim.GetPath())
-        if rigid_path in visited:
-            continue
-        visited.add(rigid_path)
-
-        rigid_api = UsdPhysics.RigidBodyAPI(rigid_prim)
-        kinematic_attr = rigid_api.GetKinematicEnabledAttr()
-        if kinematic_attr and kinematic_attr.Get():
-            continue
-
-        rigid_api.CreateKinematicEnabledAttr(True)
-        fixed += 1
-        logger.info(f"[PhysX Fix] Set kinematic on: {rigid_path}")
-    return fixed
-
-
 def build_episode_row_index_map(
     hf_dataset: Any,
     start_episode: int,
@@ -213,6 +169,8 @@ def load_initial_pose(
             if episode_key in episodes:
                 pose_data = episodes[episode_key].get("object_initial_pose")
                 if pose_data is not None:
+                    if isinstance(pose_data, dict) and "Garment" in pose_data:
+                        return pose_data, variant_name
                     return {"Garment": pose_data}, variant_name
 
         return None, None
@@ -371,15 +329,15 @@ def replay_episode(
         env.reset()
         if initial_pose is not None:
             if hasattr(env, "set_all_pose"):
-                env.set_all_pose(initial_pose)
+                try:
+                    env.set_all_pose(initial_pose)
+                except Exception as e:
+                    logger.error(f"Failed to set initial pose: {e}")
             else:
                 logger.warning("Env does not support set_all_pose, skip setting initial pose.")
 
         # 2. Stabilize environment before starting replay
-        # Use more steps when initial pose was restored, because set_all_pose()
-        # resets particles to their undeformed state and they need time to settle
-        # onto the table surface under gravity.
-        stabilize_robot(env, num_steps=200 if initial_pose is not None else 20)
+        stabilize_robot(env)
         success_achieved = False
 
         # 3. Step-by-step replay loop
@@ -512,14 +470,6 @@ def replay(args: argparse.Namespace) -> None:
     # 2. Environment Creation
     env: DirectRLEnv = gym.make(args.task, cfg=env_cfg).unwrapped
 
-    # Fix PhysX triangle mesh errors on non-kinematic rigid bodies
-    try:
-        stage = env.scene.stage
-        num_fixed = fix_physx_triangle_mesh_errors(stage)
-        if num_fixed:
-            logger.info(f"[PhysX Fix] Fixed {num_fixed} non-kinematic triangle mesh prim(s)")
-    except Exception as e:
-        logger.warning(f"[PhysX Fix] Could not apply fix: {e}")
 
     if hasattr(env, "initialize_obs"):
         env.initialize_obs()

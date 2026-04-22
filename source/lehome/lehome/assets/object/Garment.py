@@ -444,7 +444,6 @@ class GarmentObject(SingleClothPrim):
         quat = np.array(data["rot"], dtype=np.float32)  # already quaternion
         self._restore_initial_particles()
         self.set_world_pose(position=pos, orientation=quat)
-        # Update reset_pose to store 7 elements
         self.reset_pose = np.concatenate([pos, quat])
 
     def set_all_pose(self, pose_dict: dict):

@@ -121,6 +121,8 @@ class GarmentEnv(DirectRLEnv):
             if rpath in visited:
                 continue
             visited.add(rpath)
+            if "GroundPlane" in rpath:
+                continue
             rigid_api = UsdPhysics.RigidBodyAPI(rigid_prim)
             k = rigid_api.GetKinematicEnabledAttr()
             if k and k.Get():
