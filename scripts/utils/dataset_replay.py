@@ -376,7 +376,10 @@ def replay_episode(
                 logger.warning("Env does not support set_all_pose, skip setting initial pose.")
 
         # 2. Stabilize environment before starting replay
-        stabilize_robot(env)
+        # Use more steps when initial pose was restored, because set_all_pose()
+        # resets particles to their undeformed state and they need time to settle
+        # onto the table surface under gravity.
+        stabilize_robot(env, num_steps=200 if initial_pose is not None else 20)
         success_achieved = False
 
         # 3. Step-by-step replay loop
